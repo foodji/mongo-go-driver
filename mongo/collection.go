@@ -870,8 +870,6 @@ func aggregate(a aggregateParams) (*Cursor, error) {
 func (coll *Collection) CountDocuments(ctx context.Context, filter interface{},
 	opts ...*options.CountOptions) (int64, error) {
 
-	fmt.Println("FOODJI COUNT DOCUMENTS")
-
 	if ctx == nil {
 		ctx = context.Background()
 	}
