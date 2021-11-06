@@ -876,12 +876,12 @@ func (coll *Collection) CountDocuments(ctx context.Context, filter interface{},
 		ctx = context.Background()
 	}
 
-	countOpts := options.MergeCountOptions(opts...)
-
-	pipelineArr, err := countDocumentsAggregatePipeline(coll.registry, filter, countOpts)
+	filterDoc, err := transformBsoncoreDocument(coll.registry, filter, true, "filter")
 	if err != nil {
 		return 0, err
 	}
+
+	countOpts := options.MergeCountOptions(opts...)
 
 	sess := sessionFromContext(ctx)
 	if sess == nil && coll.client.sessionPool != nil {
@@ -901,21 +901,11 @@ func (coll *Collection) CountDocuments(ctx context.Context, filter interface{},
 	}
 
 	selector := makeReadPrefSelector(sess, coll.readSelector, coll.client.localThreshold)
-	op := operation.NewAggregate(pipelineArr).Session(sess).ReadConcern(rc).ReadPreference(coll.readPreference).
+	op := operation.NewCount().Query(filterDoc).Session(sess).ReadConcern(rc).ReadPreference(coll.readPreference).
 		CommandMonitor(coll.client.monitor).ServerSelector(selector).ClusterClock(coll.client.clock).Database(coll.db.name).
 		Collection(coll.name).Deployment(coll.client.deployment).Crypt(coll.client.cryptFLE).ServerAPI(coll.client.serverAPI)
-	if countOpts.Collation != nil {
-		op.Collation(bsoncore.Document(countOpts.Collation.ToDocument()))
-	}
 	if countOpts.MaxTime != nil {
 		op.MaxTimeMS(int64(*countOpts.MaxTime / time.Millisecond))
-	}
-	if countOpts.Hint != nil {
-		hintVal, err := transformValue(coll.registry, countOpts.Hint, false, "hint")
-		if err != nil {
-			return 0, err
-		}
-		op.Hint(hintVal)
 	}
 	retry := driver.RetryNone
 	if coll.client.retryReads {
@@ -928,22 +918,7 @@ func (coll *Collection) CountDocuments(ctx context.Context, filter interface{},
 		return 0, replaceErrors(err)
 	}
 
-	batch := op.ResultCursorResponse().FirstBatch
-	if batch == nil {
-		return 0, errors.New("invalid response from server, no 'firstBatch' field")
-	}
-
-	docs, err := batch.Documents()
-	if err != nil || len(docs) == 0 {
-		return 0, nil
-	}
-
-	val, ok := docs[0].Lookup("n").AsInt64OK()
-	if !ok {
-		return 0, errors.New("invalid response from server, no 'n' field")
-	}
-
-	return val, nil
+	return op.Result().N, nil
 }
 
 // EstimatedDocumentCount executes a count command and returns an estimate of the number of documents in the collection
