@@ -143,6 +143,40 @@ func (c *Count) command(dst []byte, desc description.SelectedServer) ([]byte, er
 	if c.query != nil {
 		dst = bsoncore.AppendDocumentElement(dst, "query", c.query)
 	}
+	//switch {
+	//case desc.WireVersion.Max < 12: // If wire version < 12 (4.9.0), use count command
+	//	dst = bsoncore.AppendStringElement(dst, "count", c.collection)
+	//	if c.query != nil {
+	//		dst = bsoncore.AppendDocumentElement(dst, "query", c.query)
+	//	}
+	//default: // If wire version >= 12 (4.9.0), use aggregate with $collStats
+	//	dst = bsoncore.AppendStringElement(dst, "aggregate", c.collection)
+	//	var idx int32
+	//	idx, dst = bsoncore.AppendDocumentElementStart(dst, "cursor")
+	//	dst, _ = bsoncore.AppendDocumentEnd(dst, idx)
+	//	if c.query != nil {
+	//		return nil, fmt.Errorf("'query' cannot be set on Count against servers at or above 4.9.0")
+	//	}
+	//
+	//	collStatsStage := bsoncore.NewDocumentBuilder().
+	//		AppendDocument("$collStats", bsoncore.NewDocumentBuilder().
+	//			AppendDocument("count", bsoncore.NewDocumentBuilder().Build()).
+	//			Build()).
+	//		Build()
+	//	groupStage := bsoncore.NewDocumentBuilder().
+	//		AppendDocument("$group", bsoncore.NewDocumentBuilder().
+	//			AppendInt64("_id", 1).
+	//			AppendDocument("n", bsoncore.NewDocumentBuilder().
+	//				AppendString("$sum", "$count").Build()).
+	//			Build()).
+	//		Build()
+	//	countPipeline := bsoncore.NewArrayBuilder().
+	//		AppendDocument(collStatsStage).
+	//		AppendDocument(groupStage).
+	//		Build()
+	//	dst = bsoncore.AppendArrayElement(dst, "pipeline", countPipeline)
+	//}
+
 	if c.comment.Type != bsontype.Type(0) {
 		dst = bsoncore.AppendValueElement(dst, "comment", c.comment)
 	}
