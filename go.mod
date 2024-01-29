@@ -1,34 +1,41 @@
 module go.mongodb.org/mongo-driver
 
-go 1.10
+go 1.13
 
 retract (
-	[v1.6.0, v1.6.1] // Contains data race bug in background connection establishment.
+	v1.11.8 // Contains minor changes meant for v1.12.1.
+	v1.11.5 // Contains import failure.
+
+	// Retract v1.11.0 through v1.11.2 because they contain a data race bug in
+	// operation memory pooling that may cause undefined behavior when reading
+	// raw BSON responses in error documents. Resolved by GODRIVER-2677.
+	[v1.11.0, v1.11.2]
+
+	v1.10.0 // Contains a possible data corruption bug in RewrapManyDataKey when using libmongocrypt versions less than 1.5.2.
 	[v1.7.0, v1.7.1] // Contains data race bug in background connection establishment.
+	[v1.6.0, v1.6.1] // Contains data race bug in background connection establishment.
 )
 
+// gopkg.in/yaml.v3@v3.0.0-20200313102051-9f266ea9e77c introduced through github.com/stretchr/testify@v1.6.1 is
+// vulnerable to Denial of Service (DoS) via the Unmarshal function, which causes the program to crash when attempting
+// to deserialize invalid input. https://www.cve.org/CVERecord?id=CVE-2022-28948
+replace gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c => gopkg.in/yaml.v3 v3.0.1
+
 require (
-	github.com/go-stack/stack v1.8.0
-	github.com/gobuffalo/genny v0.1.1 // indirect
-	github.com/gobuffalo/gogen v0.1.1 // indirect
-	github.com/gobuffalo/packr/v2 v2.2.0
+	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/golang/snappy v0.0.1
 	github.com/google/go-cmp v0.5.2
-	github.com/karrick/godirwalk v1.10.3 // indirect
 	github.com/klauspost/compress v1.13.6
 	github.com/kr/pretty v0.1.0
 	github.com/montanaflynn/stats v0.0.0-20171201202039-1bf9dbcd8cbe
-	github.com/pelletier/go-toml v1.7.0
 	github.com/pkg/errors v0.9.1
-	github.com/sirupsen/logrus v1.4.2 // indirect
 	github.com/stretchr/testify v1.6.1
 	github.com/tidwall/pretty v1.0.0
-	github.com/xdg-go/scram v1.0.2
-	github.com/xdg-go/stringprep v1.0.2
+	github.com/xdg-go/scram v1.1.1
+	github.com/xdg-go/stringprep v1.0.3
 	github.com/youmark/pkcs8 v0.0.0-20181117223130-1be2e3e5546d
-	golang.org/x/crypto v0.0.0-20201216223049-8b5274cf687f
-	golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e
-	golang.org/x/sys v0.0.0-20210923061019-b8560ed6a9b7 // indirect
-	golang.org/x/term v0.0.0-20210916214954-140adaaadfaf // indirect
-	golang.org/x/tools v0.0.0-20190531172133-b3315ee88b7d
+	golang.org/x/crypto v0.0.0-20220622213112-05595931fe9d
+	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
+	gopkg.in/check.v1 v1.0.0-20180628173108-788fd7840127 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

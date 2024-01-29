@@ -7,22 +7,22 @@
 package integration
 
 import (
+	"flag"
 	"log"
 	"os"
-	"strings"
 	"testing"
 
-	"go.mongodb.org/mongo-driver/internal"
 	"go.mongodb.org/mongo-driver/mongo/integration/mtest"
 )
 
 func TestMain(m *testing.M) {
-	// If the cluster is behind a load balancer, enable the SetMockServiceID flag to mock server-side LB support.
-	if strings.Contains(os.Getenv("MONGODB_URI"), "loadBalanced=true") {
-		internal.SetMockServiceID = true
-		defer func() {
-			internal.SetMockServiceID = false
-		}()
+	// All tests that use mtest.Setup() are expected to be integration tests, so skip them when the
+	// -short flag is included in the "go test" command. Also, we have to parse flags here to use
+	// testing.Short() because flags aren't parsed before TestMain() is called.
+	flag.Parse()
+	if testing.Short() {
+		log.Print("skipping mtest integration test in short mode")
+		return
 	}
 
 	if err := mtest.Setup(); err != nil {

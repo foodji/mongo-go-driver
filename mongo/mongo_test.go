@@ -16,59 +16,10 @@ import (
 	"go.mongodb.org/mongo-driver/bson/bsontype"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/internal/testutil/assert"
-	"go.mongodb.org/mongo-driver/x/bsonx"
 	"go.mongodb.org/mongo-driver/x/bsonx/bsoncore"
 )
 
 func TestMongoHelpers(t *testing.T) {
-	t.Run("transform document", func(t *testing.T) {
-		testCases := []struct {
-			name     string
-			document interface{}
-			want     bsonx.Doc
-			err      error
-		}{
-			{
-				"bson.Marshaler",
-				bMarsh{bsonx.Doc{{"foo", bsonx.String("bar")}}},
-				bsonx.Doc{{"foo", bsonx.String("bar")}},
-				nil,
-			},
-			{
-				"reflection",
-				reflectStruct{Foo: "bar"},
-				bsonx.Doc{{"foo", bsonx.String("bar")}},
-				nil,
-			},
-			{
-				"reflection pointer",
-				&reflectStruct{Foo: "bar"},
-				bsonx.Doc{{"foo", bsonx.String("bar")}},
-				nil,
-			},
-			{
-				"unsupported type",
-				[]string{"foo", "bar"},
-				nil,
-				MarshalError{
-					Value: []string{"foo", "bar"},
-					Err:   errors.New("WriteArray can only write a Array while positioned on a Element or Value but is positioned on a TopLevel")},
-			},
-			{
-				"nil",
-				nil,
-				nil,
-				ErrNilDocument,
-			},
-		}
-		for _, tc := range testCases {
-			t.Run(tc.name, func(t *testing.T) {
-				got, err := transformDocument(bson.NewRegistryBuilder().Build(), tc.document)
-				assert.Equal(t, tc.err, err, "expected error %v, got %v", tc.err, err)
-				assert.Equal(t, tc.want, got, "expected document %v, got %v", tc.want, got)
-			})
-		}
-	})
 	t.Run("transform and ensure ID", func(t *testing.T) {
 		t.Run("newly added _id should be first element", func(t *testing.T) {
 			doc := bson.D{{"foo", "bar"}, {"baz", "qux"}, {"hello", "world"}}
@@ -120,15 +71,42 @@ func TestMongoHelpers(t *testing.T) {
 		})
 	})
 	t.Run("transform aggregate pipeline", func(t *testing.T) {
+		// []byte of [{{"$limit", 12345}}]
 		index, arr := bsoncore.AppendArrayStart(nil)
 		dindex, arr := bsoncore.AppendDocumentElementStart(arr, "0")
 		arr = bsoncore.AppendInt32Element(arr, "$limit", 12345)
 		arr, _ = bsoncore.AppendDocumentEnd(arr, dindex)
 		arr, _ = bsoncore.AppendArrayEnd(arr, index)
 
+		// []byte of {{"x", 1}}
 		index, doc := bsoncore.AppendDocumentStart(nil)
 		doc = bsoncore.AppendInt32Element(doc, "x", 1)
 		doc, _ = bsoncore.AppendDocumentEnd(doc, index)
+
+		// bsoncore.Array of [{{"$merge", {}}}]
+		mergeStage := bsoncore.NewDocumentBuilder().
+			StartDocument("$merge").
+			FinishDocument().
+			Build()
+		arrMergeStage := bsoncore.NewArrayBuilder().AppendDocument(mergeStage).Build()
+
+		fooStage := bsoncore.NewDocumentBuilder().AppendString("foo", "bar").Build()
+		bazStage := bsoncore.NewDocumentBuilder().AppendString("baz", "qux").Build()
+		outStage := bsoncore.NewDocumentBuilder().AppendString("$out", "myColl").Build()
+
+		// bsoncore.Array of [{{"foo", "bar"}}, {{"baz", "qux"}}, {{"$out", "myColl"}}]
+		arrOutStage := bsoncore.NewArrayBuilder().
+			AppendDocument(fooStage).
+			AppendDocument(bazStage).
+			AppendDocument(outStage).
+			Build()
+
+		// bsoncore.Array of [{{"foo", "bar"}}, {{"$out", "myColl"}}, {{"baz", "qux"}}]
+		arrMiddleOutStage := bsoncore.NewArrayBuilder().
+			AppendDocument(fooStage).
+			AppendDocument(outStage).
+			AppendDocument(bazStage).
+			Build()
 
 		testCases := []struct {
 			name           string
@@ -388,6 +366,46 @@ func TestMongoHelpers(t *testing.T) {
 				false,
 				nil,
 			},
+			{
+				"bsoncore.Array/success",
+				bsoncore.Array(arr),
+				bson.A{
+					bson.D{{"$limit", int32(12345)}},
+				},
+				false,
+				nil,
+			},
+			{
+				"bsoncore.Array/mergeStage",
+				arrMergeStage,
+				bson.A{
+					bson.D{{"$merge", bson.D{}}},
+				},
+				true,
+				nil,
+			},
+			{
+				"bsoncore.Array/outStage",
+				arrOutStage,
+				bson.A{
+					bson.D{{"foo", "bar"}},
+					bson.D{{"baz", "qux"}},
+					bson.D{{"$out", "myColl"}},
+				},
+				true,
+				nil,
+			},
+			{
+				"bsoncore.Array/middleOutStage",
+				arrMiddleOutStage,
+				bson.A{
+					bson.D{{"foo", "bar"}},
+					bson.D{{"$out", "myColl"}},
+					bson.D{{"baz", "qux"}},
+				},
+				false,
+				nil,
+			},
 		}
 
 		for _, tc := range testCases {
@@ -439,20 +457,6 @@ func TestMongoHelpers(t *testing.T) {
 			})
 		}
 	})
-}
-
-var _ bson.Marshaler = bMarsh{}
-
-type bMarsh struct {
-	bsonx.Doc
-}
-
-func (b bMarsh) MarshalBSON() ([]byte, error) {
-	return b.Doc.MarshalBSON()
-}
-
-type reflectStruct struct {
-	Foo string
 }
 
 var _ bsoncodec.ValueMarshaler = bvMarsh{}

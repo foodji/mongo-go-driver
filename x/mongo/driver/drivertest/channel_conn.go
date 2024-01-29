@@ -28,8 +28,11 @@ type ChannelConn struct {
 
 // WriteWireMessage implements the driver.Connection interface.
 func (c *ChannelConn) WriteWireMessage(ctx context.Context, wm []byte) error {
+	// Copy wm in case it came from a buffer pool.
+	b := make([]byte, len(wm))
+	copy(b, wm)
 	select {
-	case c.Written <- wm:
+	case c.Written <- b:
 	default:
 		c.WriteErr = errors.New("could not write wiremessage to written channel")
 	}
@@ -37,7 +40,7 @@ func (c *ChannelConn) WriteWireMessage(ctx context.Context, wm []byte) error {
 }
 
 // ReadWireMessage implements the driver.Connection interface.
-func (c *ChannelConn) ReadWireMessage(ctx context.Context, dst []byte) ([]byte, error) {
+func (c *ChannelConn) ReadWireMessage(ctx context.Context) ([]byte, error) {
 	var wm []byte
 	var err error
 	select {
@@ -61,9 +64,15 @@ func (c *ChannelConn) ID() string {
 	return "faked"
 }
 
+// DriverConnectionID implements the driver.Connection interface.
+// TODO(GODRIVER-2824): replace return type with int64.
+func (c *ChannelConn) DriverConnectionID() uint64 {
+	return 0
+}
+
 // ServerConnectionID implements the driver.Connection interface.
-func (c *ChannelConn) ServerConnectionID() *int32 {
-	serverConnectionID := int32(42)
+func (c *ChannelConn) ServerConnectionID() *int64 {
+	serverConnectionID := int64(42)
 	return &serverConnectionID
 }
 

@@ -14,7 +14,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	testhelpers "go.mongodb.org/mongo-driver/internal/testutil/helpers"
+	"go.mongodb.org/mongo-driver/internal/testutil/helpers"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
@@ -38,7 +38,7 @@ type testContainer struct {
 }
 
 // Note a test supporting the deprecated gssapiServiceName property was removed from data/auth/auth_tests.json
-const authTestsDir = "../../../../data/auth/"
+const authTestsDir = "../../../../testdata/auth/"
 
 func runTestsInFile(t *testing.T, dirname string, filename string) {
 	filepath := path.Join(dirname, filename)
@@ -52,12 +52,12 @@ func runTestsInFile(t *testing.T, dirname string, filename string) {
 	filename = filename[:len(filename)-5]
 
 	for _, testCase := range container.Tests {
-		runTest(t, filename, &testCase)
+		runTest(t, filename, testCase)
 	}
 }
 
-func runTest(t *testing.T, filename string, test *testCase) {
-	t.Run(test.Description, func(t *testing.T) {
+func runTest(t *testing.T, filename string, test testCase) {
+	t.Run(filename+":"+test.Description, func(t *testing.T) {
 		opts := options.Client().ApplyURI(test.URI)
 		if test.Valid {
 			require.NoError(t, opts.Validate())
@@ -105,7 +105,7 @@ func mapInterfaceToString(m map[string]interface{}) map[string]string {
 
 // Test case for all connection string spec tests.
 func TestAuthSpec(t *testing.T) {
-	for _, file := range testhelpers.FindJSONFilesInDir(t, authTestsDir) {
+	for _, file := range helpers.FindJSONFilesInDir(t, authTestsDir) {
 		runTestsInFile(t, authTestsDir, file)
 	}
 }

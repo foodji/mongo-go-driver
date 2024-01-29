@@ -4,17 +4,19 @@
 // not use this file except in compliance with the License. You may obtain
 // a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 
+//go:build cse
 // +build cse
 
 package integration
 
 import (
+	"os"
 	"path"
 	"testing"
 )
 
 const (
-	encryptionSpecName = "client-side-encryption"
+	encryptionSpecName = "client-side-encryption/legacy"
 )
 
 func verifyClientSideEncryptionVarsSet(t *testing.T) {
@@ -52,6 +54,9 @@ func TestClientSideEncryptionSpec(t *testing.T) {
 
 	for _, fileName := range jsonFilesInDir(t, path.Join(dataPath, encryptionSpecName)) {
 		t.Run(fileName, func(t *testing.T) {
+			if fileName == "kmipKMS.json" && "" == os.Getenv("KMS_MOCK_SERVERS_RUNNING") {
+				t.Skipf("Skipping test as KMS_MOCK_SERVERS_RUNNING is not set")
+			}
 			runSpecTestFile(t, encryptionSpecName, fileName)
 		})
 	}

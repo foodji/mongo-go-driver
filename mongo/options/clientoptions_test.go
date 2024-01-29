@@ -1,3 +1,9 @@
+// Copyright (C) MongoDB, Inc. 2022-present.
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may
+// not use this file except in compliance with the License. You may obtain
+// a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+
 package options
 
 import (
@@ -10,6 +16,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net"
+	"net/http"
 	"os"
 	"reflect"
 	"testing"
@@ -69,6 +76,7 @@ func TestClientOptions(t *testing.T) {
 			{"MaxConnIdleTime", (*ClientOptions).SetMaxConnIdleTime, 5 * time.Second, "MaxConnIdleTime", true},
 			{"MaxPoolSize", (*ClientOptions).SetMaxPoolSize, uint64(250), "MaxPoolSize", true},
 			{"MinPoolSize", (*ClientOptions).SetMinPoolSize, uint64(10), "MinPoolSize", true},
+			{"MaxConnecting", (*ClientOptions).SetMaxConnecting, uint64(10), "MaxConnecting", true},
 			{"PoolMonitor", (*ClientOptions).SetPoolMonitor, &event.PoolMonitor{}, "PoolMonitor", false},
 			{"Monitor", (*ClientOptions).SetMonitor, &event.CommandMonitor{}, "Monitor", false},
 			{"ReadConcern", (*ClientOptions).SetReadConcern, readconcern.Majority(), "ReadConcern", false},
@@ -158,6 +166,7 @@ func TestClientOptions(t *testing.T) {
 				cmp.Comparer(func(cfg1, cfg2 *tls.Config) bool { return cfg1 == cfg2 }),
 				cmp.Comparer(func(fp1, fp2 *event.PoolMonitor) bool { return fp1 == fp2 }),
 				cmp.AllowUnexported(ClientOptions{}),
+				cmpopts.IgnoreFields(http.Client{}, "Transport"),
 			); diff != "" {
 				t.Errorf("diff:\n%s", diff)
 				t.Errorf("Merged client options do not match. got %v; want %v", got, want)
@@ -198,40 +207,47 @@ func TestClientOptions(t *testing.T) {
 			{
 				"ParseError",
 				"not-mongo-db-uri://",
-				&ClientOptions{err: internal.WrapErrorf(
-					errors.New(`scheme must be "mongodb" or "mongodb+srv"`), "error parsing uri",
-				)},
+				&ClientOptions{
+					err: internal.WrapErrorf(
+						errors.New(`scheme must be "mongodb" or "mongodb+srv"`), "error parsing uri",
+					),
+					HTTPClient: internal.DefaultHTTPClient,
+				},
 			},
 			{
 				"ReadPreference Invalid Mode",
 				"mongodb://localhost/?maxStaleness=200",
 				&ClientOptions{
-					err:   fmt.Errorf("unknown read preference %v", ""),
-					Hosts: []string{"localhost"},
+					err:        fmt.Errorf("unknown read preference %v", ""),
+					Hosts:      []string{"localhost"},
+					HTTPClient: internal.DefaultHTTPClient,
 				},
 			},
 			{
 				"ReadPreference Primary With Options",
 				"mongodb://localhost/?readPreference=Primary&maxStaleness=200",
 				&ClientOptions{
-					err:   errors.New("can not specify tags, max staleness, or hedge with mode primary"),
-					Hosts: []string{"localhost"},
+					err:        errors.New("can not specify tags, max staleness, or hedge with mode primary"),
+					Hosts:      []string{"localhost"},
+					HTTPClient: internal.DefaultHTTPClient,
 				},
 			},
 			{
 				"TLS addCertFromFile error",
 				"mongodb://localhost/?ssl=true&sslCertificateAuthorityFile=testdata/doesntexist",
 				&ClientOptions{
-					err:   &os.PathError{Op: "open", Path: "testdata/doesntexist"},
-					Hosts: []string{"localhost"},
+					err:        &os.PathError{Op: "open", Path: "testdata/doesntexist"},
+					Hosts:      []string{"localhost"},
+					HTTPClient: internal.DefaultHTTPClient,
 				},
 			},
 			{
 				"TLS ClientCertificateKey",
 				"mongodb://localhost/?ssl=true&sslClientCertificateKeyFile=testdata/doesntexist",
 				&ClientOptions{
-					err:   &os.PathError{Op: "open", Path: "testdata/doesntexist"},
-					Hosts: []string{"localhost"},
+					err:        &os.PathError{Op: "open", Path: "testdata/doesntexist"},
+					Hosts:      []string{"localhost"},
+					HTTPClient: internal.DefaultHTTPClient,
 				},
 			},
 			{
@@ -267,10 +283,13 @@ func TestClientOptions(t *testing.T) {
 			{
 				"Unescaped slash in username",
 				"mongodb:///:pwd@localhost",
-				&ClientOptions{err: internal.WrapErrorf(
-					errors.New("unescaped slash in username"),
-					"error parsing uri",
-				)},
+				&ClientOptions{
+					err: internal.WrapErrorf(
+						errors.New("unescaped slash in username"),
+						"error parsing uri",
+					),
+					HTTPClient: internal.DefaultHTTPClient,
+				},
 			},
 			{
 				"Password",
@@ -337,6 +356,16 @@ func TestClientOptions(t *testing.T) {
 				"MaxPoolSize",
 				"mongodb://localhost/?maxPoolSize=256",
 				baseClient().SetMaxPoolSize(256),
+			},
+			{
+				"MinPoolSize",
+				"mongodb://localhost/?minPoolSize=256",
+				baseClient().SetMinPoolSize(256),
+			},
+			{
+				"MaxConnecting",
+				"mongodb://localhost/?maxConnecting=10",
+				baseClient().SetMaxConnecting(10),
 			},
 			{
 				"ReadConcern",
@@ -441,27 +470,36 @@ func TestClientOptions(t *testing.T) {
 			{
 				"TLS only tlsCertificateFile",
 				"mongodb://localhost/?tlsCertificateFile=testdata/nopass/cert.pem",
-				&ClientOptions{err: internal.WrapErrorf(
-					errors.New("the tlsPrivateKeyFile URI option must be provided if the tlsCertificateFile option is specified"),
-					"error validating uri",
-				)},
+				&ClientOptions{
+					err: internal.WrapErrorf(
+						errors.New("the tlsPrivateKeyFile URI option must be provided if the tlsCertificateFile option is specified"),
+						"error validating uri",
+					),
+					HTTPClient: internal.DefaultHTTPClient,
+				},
 			},
 			{
 				"TLS only tlsPrivateKeyFile",
 				"mongodb://localhost/?tlsPrivateKeyFile=testdata/nopass/key.pem",
-				&ClientOptions{err: internal.WrapErrorf(
-					errors.New("the tlsCertificateFile URI option must be provided if the tlsPrivateKeyFile option is specified"),
-					"error validating uri",
-				)},
+				&ClientOptions{
+					err: internal.WrapErrorf(
+						errors.New("the tlsCertificateFile URI option must be provided if the tlsPrivateKeyFile option is specified"),
+						"error validating uri",
+					),
+					HTTPClient: internal.DefaultHTTPClient,
+				},
 			},
 			{
 				"TLS tlsCertificateFile and tlsPrivateKeyFile and tlsCertificateKeyFile",
 				"mongodb://localhost/?tlsCertificateFile=testdata/nopass/cert.pem&tlsPrivateKeyFile=testdata/nopass/key.pem&tlsCertificateKeyFile=testdata/nopass/certificate.pem",
-				&ClientOptions{err: internal.WrapErrorf(
-					errors.New("the sslClientCertificateKeyFile/tlsCertificateKeyFile URI option cannot be provided "+
-						"along with tlsCertificateFile or tlsPrivateKeyFile"),
-					"error validating uri",
-				)},
+				&ClientOptions{
+					err: internal.WrapErrorf(
+						errors.New("the sslClientCertificateKeyFile/tlsCertificateKeyFile URI option cannot be provided "+
+							"along with tlsCertificateFile or tlsPrivateKeyFile"),
+						"error validating uri",
+					),
+					HTTPClient: internal.DefaultHTTPClient,
+				},
 			},
 			{
 				"disable OCSP endpoint check",
@@ -485,24 +523,27 @@ func TestClientOptions(t *testing.T) {
 				"TLS empty CA file",
 				"mongodb://localhost/?tlsCAFile=testdata/empty-ca.pem",
 				&ClientOptions{
-					Hosts: []string{"localhost"},
-					err:   errors.New("the specified CA file does not contain any valid certificates"),
+					Hosts:      []string{"localhost"},
+					HTTPClient: internal.DefaultHTTPClient,
+					err:        errors.New("the specified CA file does not contain any valid certificates"),
 				},
 			},
 			{
 				"TLS CA file with no certificates",
 				"mongodb://localhost/?tlsCAFile=testdata/ca-key.pem",
 				&ClientOptions{
-					Hosts: []string{"localhost"},
-					err:   errors.New("the specified CA file does not contain any valid certificates"),
+					Hosts:      []string{"localhost"},
+					HTTPClient: internal.DefaultHTTPClient,
+					err:        errors.New("the specified CA file does not contain any valid certificates"),
 				},
 			},
 			{
 				"TLS malformed CA file",
 				"mongodb://localhost/?tlsCAFile=testdata/malformed-ca.pem",
 				&ClientOptions{
-					Hosts: []string{"localhost"},
-					err:   errors.New("the specified CA file does not contain any valid certificates"),
+					Hosts:      []string{"localhost"},
+					HTTPClient: internal.DefaultHTTPClient,
+					err:        errors.New("the specified CA file does not contain any valid certificates"),
 				},
 			},
 			{
@@ -526,6 +567,11 @@ func TestClientOptions(t *testing.T) {
 				"mongodb+srv://test1.test.build.10gen.cc/?srvMaxHosts=2",
 				baseClient().SetSRVMaxHosts(2).
 					SetHosts([]string{"localhost.test.build.10gen.cc:27017", "localhost.test.build.10gen.cc:27018"}),
+			},
+			{
+				"GODRIVER-2263 regression test",
+				"mongodb://localhost/?tlsCertificateKeyFile=testdata/one-pk-multiple-certs.pem",
+				baseClient().SetTLSConfig(&tls.Config{Certificates: make([]tls.Certificate, 1)}),
 			},
 		}
 
@@ -551,6 +597,7 @@ func TestClientOptions(t *testing.T) {
 					cmp.Comparer(compareErrors),
 					cmpopts.SortSlices(stringLess),
 					cmpopts.IgnoreFields(connstring.ConnString{}, "SSLClientCertificateKeyPassword"),
+					cmpopts.IgnoreFields(http.Client{}, "Transport"),
 				); diff != "" {
 					t.Errorf("URI did not apply correctly: (-want +got)\n%s", diff)
 				}
@@ -597,7 +644,6 @@ func TestClientOptions(t *testing.T) {
 			{"multiple hosts in options", Client().SetHosts([]string{"foo", "bar"}), internal.ErrLoadBalancedWithMultipleHosts},
 			{"replica set name", Client().SetReplicaSet("foo"), internal.ErrLoadBalancedWithReplicaSet},
 			{"directConnection=true", Client().SetDirect(true), internal.ErrLoadBalancedWithDirectConnection},
-			{"directConnection=false", Client().SetDirect(false), internal.ErrLoadBalancedWithDirectConnection},
 		}
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
@@ -612,6 +658,40 @@ func TestClientOptions(t *testing.T) {
 				tc.opts.SetLoadBalanced(true)
 				err = tc.opts.Validate()
 				assert.Equal(t, tc.err, err, "expected error %v when loadBalanced=true, got %v", tc.err, err)
+			})
+		}
+	})
+	t.Run("minPoolSize validation", func(t *testing.T) {
+		testCases := []struct {
+			name string
+			opts *ClientOptions
+			err  error
+		}{
+			{
+				"minPoolSize < maxPoolSize",
+				Client().SetMinPoolSize(128).SetMaxPoolSize(256),
+				nil,
+			},
+			{
+				"minPoolSize == maxPoolSize",
+				Client().SetMinPoolSize(128).SetMaxPoolSize(128),
+				nil,
+			},
+			{
+				"minPoolSize > maxPoolSize",
+				Client().SetMinPoolSize(64).SetMaxPoolSize(32),
+				errors.New("minPoolSize must be less than or equal to maxPoolSize, got minPoolSize=64 maxPoolSize=32"),
+			},
+			{
+				"maxPoolSize == 0",
+				Client().SetMinPoolSize(128).SetMaxPoolSize(0),
+				nil,
+			},
+		}
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				err := tc.opts.Validate()
+				assert.Equal(t, tc.err, err, "expected error %v, got %v", tc.err, err)
 			})
 		}
 	})
@@ -637,6 +717,41 @@ func TestClientOptions(t *testing.T) {
 				tc.opts.SetSRVMaxHosts(2)
 				err = tc.opts.Validate()
 				assert.Equal(t, tc.err, err, "expected error %v when srvMaxHosts > 0, got %v", tc.err, err)
+			})
+		}
+	})
+	t.Run("srvMaxHosts validation", func(t *testing.T) {
+		t.Parallel()
+
+		testCases := []struct {
+			name string
+			opts *ClientOptions
+			err  error
+		}{
+			{
+				name: "valid ServerAPI",
+				opts: Client().SetServerAPIOptions(ServerAPI(ServerAPIVersion1)),
+				err:  nil,
+			},
+			{
+				name: "invalid ServerAPI",
+				opts: Client().SetServerAPIOptions(ServerAPI("nope")),
+				err:  errors.New(`api version "nope" not supported; this driver version only supports API version "1"`),
+			},
+			{
+				name: "invalid ServerAPI with other invalid options",
+				opts: Client().SetServerAPIOptions(ServerAPI("nope")).SetSRVMaxHosts(1).SetReplicaSet("foo"),
+				err:  errors.New(`api version "nope" not supported; this driver version only supports API version "1"`),
+			},
+		}
+		for _, tc := range testCases {
+			tc := tc // Capture range variable.
+
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+
+				err := tc.opts.Validate()
+				assert.Equal(t, tc.err, err, "want error %v, got error %v", tc.err, err)
 			})
 		}
 	})

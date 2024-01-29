@@ -1,3 +1,9 @@
+// Copyright (C) MongoDB, Inc. 2021-present.
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may
+// not use this file except in compliance with the License. You may obtain
+// a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+
 package operation
 
 import (
@@ -153,7 +159,9 @@ func (h *Hello) handshakeCommand(dst []byte, desc description.SelectedServer) ([
 
 // command appends all necessary command fields.
 func (h *Hello) command(dst []byte, desc description.SelectedServer) ([]byte, error) {
-	if h.serverAPI != nil || desc.Server.HelloOK {
+	// Use "hello" if topology is LoadBalanced, API version is declared or server
+	// has responded with "helloOk". Otherwise, use legacy hello.
+	if desc.Kind == description.LoadBalanced || h.serverAPI != nil || desc.Server.HelloOK {
 		dst = bsoncore.AppendInt32Element(dst, "hello", 1)
 	} else {
 		dst = bsoncore.AppendInt32Element(dst, internal.LegacyHello, 1)
@@ -186,12 +194,12 @@ func (h *Hello) Execute(ctx context.Context) error {
 		return errors.New("a Hello must have a Deployment set before Execute can be called")
 	}
 
-	return h.createOperation().Execute(ctx, nil)
+	return h.createOperation().Execute(ctx)
 }
 
 // StreamResponse gets the next streaming Hello response from the server.
 func (h *Hello) StreamResponse(ctx context.Context, conn driver.StreamerConnection) error {
-	return h.createOperation().ExecuteExhaust(ctx, conn, nil)
+	return h.createOperation().ExecuteExhaust(ctx, conn)
 }
 
 func (h *Hello) createOperation() driver.Operation {
@@ -221,7 +229,7 @@ func (h *Hello) GetHandshakeInformation(ctx context.Context, _ address.Address, 
 			return nil
 		},
 		ServerAPI: h.serverAPI,
-	}.Execute(ctx, nil)
+	}.Execute(ctx)
 	if err != nil {
 		return driver.HandshakeInformation{}, err
 	}
@@ -232,7 +240,7 @@ func (h *Hello) GetHandshakeInformation(ctx context.Context, _ address.Address, 
 	if speculativeAuthenticate, ok := h.res.Lookup("speculativeAuthenticate").DocumentOK(); ok {
 		info.SpeculativeAuthenticate = speculativeAuthenticate
 	}
-	if serverConnectionID, ok := h.res.Lookup("connectionId").Int32OK(); ok {
+	if serverConnectionID, ok := h.res.Lookup("connectionId").AsInt64OK(); ok {
 		info.ServerConnectionID = &serverConnectionID
 	}
 	// Cast to bson.Raw to lookup saslSupportedMechs to avoid converting from bsoncore.Value to bson.RawValue for the

@@ -749,8 +749,9 @@ func ExampleClient_StartSession_withTransaction() {
 	result, err := sess.WithTransaction(
 		context.TODO(),
 		func(sessCtx mongo.SessionContext) (interface{}, error) {
-			// Use sessCtx as the Context parameter for InsertOne and FindOne so
-			// both operations are run in a transaction.
+			// Use the mongo.SessionContext as the Context parameter for
+			// InsertOne and FindOne so both operations are run in the same
+			// transaction.
 
 			coll := client.Database("db").Collection("coll")
 			res, err := coll.InsertOne(sessCtx, bson.D{{"x", 1}})
@@ -874,7 +875,7 @@ func ExampleCursor_TryNext() {
 		}
 
 		// If TryNext returns false, the next document is not yet available, the
-		// cursor was exhausted and was closed, or an error occured. TryNext
+		// cursor was exhausted and was closed, or an error occurred. TryNext
 		// should only be called again for the empty batch case.
 		if err := cursor.Err(); err != nil {
 			log.Fatal(err)
@@ -1069,4 +1070,86 @@ func ExampleIndexView_List() {
 		log.Fatal(err)
 	}
 	fmt.Println(results)
+}
+
+func ExampleCollection_Find_primitiveRegex() {
+	ctx := context.TODO()
+	clientOptions := options.Client().ApplyURI("mongodb://localhost:27017")
+
+	// Connect to a mongodb server.
+	client, err := mongo.Connect(ctx, clientOptions)
+	if err != nil {
+		panic(err)
+	}
+
+	defer client.Disconnect(ctx)
+
+	type Pet struct {
+		Type string `bson:"type"`
+		Name string `bson:"name"`
+	}
+
+	// Create a slice of documents to insert. We will lookup a subset of
+	// these documents using regex.
+	toInsert := []interface{}{
+		Pet{Type: "cat", Name: "Mo"},
+		Pet{Type: "dog", Name: "Loki"},
+	}
+
+	coll := client.Database("test").Collection("test")
+
+	if _, err := coll.InsertMany(ctx, toInsert); err != nil {
+		panic(err)
+	}
+
+	// Create a filter to find a document with key "name" and any value that
+	// starts with letter "m". Use the "i" option to indicate
+	// case-insensitivity.
+	filter := bson.D{{"name", primitive.Regex{Pattern: "^m", Options: "i"}}}
+
+	_, err = coll.Find(ctx, filter)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func ExampleCollection_Find_regex() {
+	ctx := context.TODO()
+	clientOptions := options.Client().ApplyURI("mongodb://localhost:27017")
+
+	// Connect to a mongodb server.
+	client, err := mongo.Connect(ctx, clientOptions)
+	if err != nil {
+		panic(err)
+	}
+
+	defer client.Disconnect(ctx)
+
+	type Pet struct {
+		Type string `bson:"type"`
+		Name string `bson:"name"`
+	}
+
+	// Create a slice of documents to insert. We will lookup a subset of
+	// these documents using regex.
+	toInsert := []interface{}{
+		Pet{Type: "cat", Name: "Mo"},
+		Pet{Type: "dog", Name: "Loki"},
+	}
+
+	coll := client.Database("test").Collection("test")
+
+	if _, err := coll.InsertMany(ctx, toInsert); err != nil {
+		panic(err)
+	}
+
+	// Create a filter to find a document with key "name" and any value that
+	// starts with letter "m". Use the "i" option to indicate
+	// case-insensitivity.
+	filter := bson.D{{"name", bson.D{{"$regex", "^m"}, {"$options", "i"}}}}
+
+	_, err = coll.Find(ctx, filter)
+	if err != nil {
+		panic(err)
+	}
 }

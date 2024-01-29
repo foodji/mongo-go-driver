@@ -8,10 +8,10 @@ package mtest
 
 import (
 	"context"
-	"time"
 
 	"github.com/pkg/errors"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/internal"
 	"go.mongodb.org/mongo-driver/mongo/address"
 	"go.mongodb.org/mongo-driver/mongo/description"
 	"go.mongodb.org/mongo-driver/x/bsonx/bsoncore"
@@ -57,7 +57,8 @@ func (c *connection) WriteWireMessage(_ context.Context, wm []byte) error {
 }
 
 // ReadWireMessage returns the next response in the connection's list of responses.
-func (c *connection) ReadWireMessage(_ context.Context, dst []byte) ([]byte, error) {
+func (c *connection) ReadWireMessage(_ context.Context) ([]byte, error) {
+	var dst []byte
 	if len(c.responses) == 0 {
 		return dst, errors.New("no responses remaining")
 	}
@@ -89,9 +90,15 @@ func (*connection) ID() string {
 	return "<mock_connection>"
 }
 
+// DriverConnectionID returns a fixed identifier for the driver pool connection.
+// TODO(GODRIVER-2824): replace return type with int64.
+func (*connection) DriverConnectionID() uint64 {
+	return 0
+}
+
 // ServerConnectionID returns a fixed identifier for the server connection.
-func (*connection) ServerConnectionID() *int32 {
-	serverConnectionID := int32(42)
+func (*connection) ServerConnectionID() *int64 {
+	serverConnectionID := int64(42)
 	return &serverConnectionID
 }
 
@@ -134,9 +141,9 @@ func (md *mockDeployment) Connection(context.Context) (driver.Connection, error)
 	return md.conn, nil
 }
 
-// MinRTT always returns 0. It implements the driver.Server interface.
-func (md *mockDeployment) MinRTT() time.Duration {
-	return 0
+// RTTMonitor implements the driver.Server interface.
+func (md *mockDeployment) RTTMonitor() driver.RTTMonitor {
+	return &internal.ZeroRTTMonitor{}
 }
 
 // Connect is a no-op method which implements the driver.Connector interface.
